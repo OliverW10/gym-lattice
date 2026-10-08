@@ -4,14 +4,15 @@
 Implements the 2D Lattice Environment
 """
 # Import gym modules
+from io import StringIO
 import sys
 from math import floor
 from collections import OrderedDict
+from typing import Any
 
-import gym
-from gym import (spaces, utils, logger)
+import gymnasium as gym
+from gymnasium import (spaces, utils, logger)
 import numpy as np
-from six import StringIO
 
 # Human-readable
 ACTION_TO_STR = {
@@ -61,7 +62,7 @@ class Lattice2DEnv(gym.Env):
     mechanics model of the conformational and se quence spaces of proteins.
     Marcromolecules 22(10), 3986–3997 (1989)
     """
-    metadata = {'render.modes': ['human', 'ansi']}
+    metadata = {'render_modes': ['human', 'ansi']}
 
     def __init__(self, seq, collision_penalty=-2, trap_penalty=0.5):
         """Initializes the lattice
@@ -122,7 +123,7 @@ class Lattice2DEnv(gym.Env):
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Box(low=-2, high=1,
                                             shape=(self.grid_length, self.grid_length),
-                                            dtype=int)
+                                            dtype=np.int8)
 
         # Initialize values
         self.reset()
@@ -220,13 +221,16 @@ class Lattice2DEnv(gym.Env):
             'collisions'   : self.collisions,
             'actions'      : [ACTION_TO_STR[i] for i in self.actions],
             'is_trapped'   : is_trapped,
-            'state_chain'  : self.state
+            'state_chain'  : OrderedDict(self.state)
         }
 
-        return (grid, reward, self.done, info)
+        terminated = self.done
+        truncated = False
+        return (grid.copy(), reward, terminated, truncated, info)
 
-    def reset(self):
-        """Resets the environment"""
+    def reset(self, *, seed=None, options=None):
+        """Resets the environment."""
+        super().reset(seed=seed)
         self.state = OrderedDict({(0, 0) : self.seq[0]})
         self.actions = []
         self.collisions = 0
@@ -238,43 +242,40 @@ class Lattice2DEnv(gym.Env):
         self.grid[self.midpoint] = POLY_TO_INT[self.seq[0]]
 
         self.last_action = None
-        return self.grid
+        info = {'state_chain': OrderedDict(self.state)}
+        return self.grid.copy(), info
 
-    def render(self, mode='human'):
+    def render(self, mode: str = 'human') -> Any:
         """Renders the environment"""
 
         outfile = StringIO() if mode == 'ansi' else sys.stdout
         # Flip so highest y-value row is printed first
-        desc = np.flipud(self.grid).astype(str)
+        grid_display = np.flipud(self.grid).astype(str)
+        desc = grid_display.tolist()
 
         # Convert everything to human-readable symbols
-        desc[desc == '0'] = '*'
-        desc[desc == '1'] = 'H'
-        desc[desc == '-1'] = 'P'
+        for row_index, row in enumerate(desc):
+            desc[row_index] = [
+                '*' if cell == '0' else 'H' if cell == '1' else 'P' if cell == '-1' else cell
+                for cell in row
+            ]
 
         # Obtain all x-y indices of elements
-        x_free, y_free = np.where(desc == '*')
-        x_h, y_h = np.where(desc == 'H')
-        x_p, y_p = np.where(desc == 'P')
-
-        # Decode if possible
-        desc.tolist()
-        try:
-            desc = [[c.decode('utf-8') for c in line] for line in desc]
-        except AttributeError:
-            pass
+        x_free, y_free = np.where(grid_display == '0')
+        x_h, y_h = np.where(grid_display == '1')
+        x_p, y_p = np.where(grid_display == '-1')
 
         # All unfilled spaces are gray
-        for unfilled_coords in zip(x_free, y_free):
-            desc[unfilled_coords] = utils.colorize(desc[unfilled_coords], "gray")
+        for row, col in zip(x_free, y_free):
+            desc[int(row)][int(col)] = utils.colorize(desc[int(row)][int(col)], "gray")
 
         # All hydrophobic molecules are bold-green
-        for hmol_coords in zip(x_h, y_h):
-            desc[hmol_coords] = utils.colorize(desc[hmol_coords], "green", bold=True)
+        for row, col in zip(x_h, y_h):
+            desc[int(row)][int(col)] = utils.colorize(desc[int(row)][int(col)], "green", bold=True)
 
         # All polar molecules are cyan
-        for pmol_coords in zip(x_p, y_p):
-            desc[pmol_coords] = utils.colorize(desc[pmol_coords], "cyan")
+        for row, col in zip(x_p, y_p):
+            desc[int(row)][int(col)] = utils.colorize(desc[int(row)][int(col)], "cyan")
 
         # Provide prompt for last action
         if self.last_action is not None:
@@ -324,6 +325,7 @@ class Lattice2DEnv(gym.Env):
         numpy.ndarray
             Grid of shape :code:`(n, n)` with the chain inside
         """
+        self.grid.fill(0)
         for coord, poly in chain.items():
             trans_x, trans_y = tuple(sum(x) for x in zip(self.midpoint, coord))
             # Recall that a numpy array works by indexing the rows first

@@ -86,7 +86,7 @@ def lattice2d_fixed_env():
 def test_compute_reward_no_penalty(lattice2d_fixed_env):
     """Test reward function with a normal, no-penalty action"""
     for _ in range(3):
-        _, reward, _, _ = lattice2d_fixed_env.step(0)
+        _, reward, _, _, _ = lattice2d_fixed_env.step(0)
         expected_reward = 0
 
         assert expected_reward == reward
@@ -94,7 +94,7 @@ def test_compute_reward_no_penalty(lattice2d_fixed_env):
 def test_compute_reward_with_collision(lattice2d_fixed_env):
     """Test reward function with a collision"""
     for i, action in enumerate([0, 2, 1, 0]):
-        _, reward, _, _ = lattice2d_fixed_env.step(action)
+        _, reward, _, _, _ = lattice2d_fixed_env.step(action)
         if i == 2: # When action == 1, there is collision
             expected_reward = lattice2d_fixed_env.collision_penalty 
             assert expected_reward == reward
@@ -107,8 +107,8 @@ def test_compute_reward_with_trap():
     # Define sequence of actions that will trap the agent
     actions = [0, 2, 2, 3, 3, 1, 0, 1]
     for _ , action in enumerate(actions):
-        _, reward, done, _ = env.step(action)
-        if done:
+        _, reward, terminated, _, _ = env.step(action)
+        if terminated:
             assert expected_reward == reward
 
 @pytest.mark.parametrize("action", [5, -2, 'L', 'F', '2'])
@@ -127,10 +127,10 @@ def test_illegal_step_call(lattice2d_env):
 def test_done_signal(lattice2d_env):
     """Test if done signal responds at the end of an episode"""
     test_actions = np.zeros(shape=(len(lattice2d_env.seq)-1,), dtype=int)
-    done = False # Must change to True
+    terminated = False # Must change to True
     for action in test_actions:
-        _, _, done, _ = lattice2d_env.step(action)
-    assert done
+        _, _, terminated, _, _ = lattice2d_env.step(action)
+    assert terminated
 
 def test_done_seq_length_one():
     """Test that the done signal is set when starting with a sequence of length 1"""
@@ -142,11 +142,11 @@ def test_trapped():
     env = Lattice2DEnv("PPPPPPPPPP") # has 0 reward
 
     for action in [0, 0, 2, 2, 3, 3, 1]:
-        _, _, done, info = env.step(action)
-        assert not done
+        _, _, terminated, _, info = env.step(action)
+        assert not terminated
         assert not info["is_trapped"]
 
-    _, reward, done, info = env.step(0)
-    assert done
+    _, reward, terminated, _, info = env.step(0)
+    assert terminated
     assert info["is_trapped"]
     assert reward == -5 # len(seq) * trap_penalty
