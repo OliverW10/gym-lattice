@@ -1,29 +1,31 @@
 # -*- coding: utf-8 -*-
 
-"""Gymnasium-compatible implementation of the 2D HP lattice environment."""
+"""
+Implements the 2D Lattice Environment
+"""
 # Import gym modules
 from io import StringIO
 import sys
 from math import floor
 from collections import OrderedDict
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any
 
 import gymnasium as gym
 from gymnasium import (spaces, utils, logger)
 import numpy as np
-from numpy.typing import NDArray
 
 # Human-readable
-ACTION_TO_STR: Dict[int, str] = {
+ACTION_TO_STR = {
     0 : 'L', 1 : 'D',
     2 : 'U', 3 : 'R'}
 
-POLY_TO_INT: Dict[str, int] = {
+POLY_TO_INT = {
     'H' : 1, 'P' : -1
 }
 
 class Lattice2DEnv(gym.Env):
-    """A 2D HP lattice environment based on Dill and Lau (1989).
+    """A 2-dimensional lattice environment from Dill and Lau, 1989
+    [dill1989lattice]_.
 
     It follows an absolute Cartesian coordinate system, the location of
     the polymer is stated independently from one another. Thus, we have
@@ -39,53 +41,48 @@ class Lattice2DEnv(gym.Env):
     Attributes
     ----------
     seq : str
-        Non-empty sequence of hydrophobic (``H``) and polar (``P``) units.
+        Polymer sequence describing a particular protein.
     state : OrderedDict
-        Polymer chain, mapping lattice coordinates to ``H`` or ``P``.
-    actions : list of int
-        Valid actions taken by the agent (0=left, 1=down, 2=up, 3=right).
+        Dictionary of the current polymer chain with coordinates and
+        polymer type (H or P).
+    actions : list
+        List of actions performed by the model.
     collisions : int
-        Number of attempted moves into occupied coordinates.
+        Number of collisions incurred by the model.
     trapped : int
-        Number of times the chain became trapped.
+        Number of times the agent was trapped.
     grid_length : int
-        Length of one side of the square grid.
-    midpoint : tuple of int
-        Grid coordinate at which the first polymer is placed.
+        Length of one side of the grid.
+    midpoint : tuple
+        Coordinate containing the midpoint of the grid.
     grid : numpy.ndarray
-        Integer grid containing the current polymer chain.
+        Actual grid containing the polymer chain.
 
     .. [dill1989lattice] Lau, K.F., Dill, K.A.: A lattice statistical
-    mechanics model of the conformational and sequence spaces of proteins.
-    Macromolecules 22(10), 3986–3997 (1989)
+    mechanics model of the conformational and se quence spaces of proteins.
+    Marcromolecules 22(10), 3986–3997 (1989)
     """
-    metadata: Dict[str, List[str]] = {'render_modes': ['human', 'ansi']}
+    metadata = {'render_modes': ['human', 'ansi']}
 
-    def __init__(self, seq: str, collision_penalty: int = -2,
-                 trap_penalty: float = 0.5) -> None:
-        """Initialize the lattice environment.
+    def __init__(self, seq, collision_penalty=-2, trap_penalty=0.5):
+        """Initializes the lattice
 
         Parameters
         ----------
-        seq : str
-            Non-empty sequence containing only ``H`` and ``P``.
-        collision_penalty : int
-            Negative penalty for an attempted move into an occupied cell.
-            Defaults to ``-2``.
-        trap_penalty : float
-            Fraction in the open interval ``(0, 1)`` used to calculate the
-            penalty for becoming trapped. Defaults to ``0.5``; the applied
-            penalty is ``floor(len(seq) * trap_penalty)``.
+        seq : str, must only consist of 'H' or 'P'
+            Sequence containing the polymer chain.
+        collision_penalty : int, must be a negative value
+            Penalty incurred when the agent made an invalid action.
+            Default is -2.
+        trap_penalty : float, must be between 0 and 1
+            Penalty incurred when the agent is trapped. Actual value is
+            computed as :code:`floor(length_of_sequence * trap_penalty)`
+            Default is -2.
 
         Raises
         ------
-        ValueError
-            If the sequence contains characters other than ``H`` or ``P``,
-            or if either penalty is outside its allowed range.
-        AttributeError
-            If ``seq`` is not a string.
-        TypeError
-            If a penalty cannot be compared with its required range.
+        AssertionError
+            If a certain polymer is not 'H' or 'P'
         """
         try:
             if not set(seq.upper()) <= set('HP'):
@@ -131,8 +128,8 @@ class Lattice2DEnv(gym.Env):
         # Initialize values
         self.reset()
 
-    def step(self, action: int) -> Tuple[NDArray[np.int_], int, bool, bool, Dict[str, Any]]:
-        """Apply an action and return the Gymnasium step result.
+    def step(self, action):
+        """Updates the current chain with the specified action.
 
         The action supplied by the agent should be an integer from 0
         to 3. In this case:
@@ -143,23 +140,22 @@ class Lattice2DEnv(gym.Env):
         The best way to remember this is to note that they are similar to the
         'h', 'j', 'k', and 'l' keys in vim.
 
-        Returns the observation, reward, termination and truncation flags, and
-        auxiliary information as ``(observation, reward, terminated,
-        truncated, info)``.
+        This method returns the Gymnasium step tuple
+        ``(observation, reward, terminated, truncated, info)``.
 
         The observations are arranged as a :code:`numpy.ndarray` matrix, more
         suitable for agents built using convolutional neural networks. The
         'H' is represented as :code:`1`s whereas the 'P's as :code:`-1`s.
         However, for the actual chain, that is, an :code:`OrderedDict` and
         not its grid-like representation, can be accessed from
-        ``info['state_chain']``.
+        :code:`info['state_chain]`.
 
         The reward is calculated at the end of every episode, that is, when
         the length of the chain is equal to the length of the input sequence.
 
         Parameters
         ----------
-        action : int
+        action : int, {0, 1, 2, 3}
             Specifies the position where the next polymer will be placed
             relative to the previous one:
                 - 0 : left
@@ -170,16 +166,16 @@ class Lattice2DEnv(gym.Env):
         Returns
         -------
         tuple
-            The lattice observation, integer reward, ``terminated`` and
-            ``truncated`` flags, and an info dictionary. Truncation is always
-            false for this environment.
+            Current observation, reward, termination and truncation flags,
+            and additional information.
 
         Raises
         ------
-        ValueError
-            If the action is not in the discrete action space.
+        AssertionError
+            When the specified action is invalid.
         IndexError
-            If a step is attempted after every polymer has been placed.
+            When :code:`step()` is still called even if done signal
+            is already :code:`True`.
         """
         if not self.action_space.contains(action):
             raise ValueError("%r (%s) invalid" % (action, type(action)))
@@ -227,26 +223,11 @@ class Lattice2DEnv(gym.Env):
         truncated = False
         return (grid.copy(), reward, terminated, truncated, info)
 
-    def reset(self, *, seed: Optional[int] = None,
-              options: Optional[Dict[str, Any]] = None) -> Tuple[NDArray[np.int_], Dict[str, Any]]:
-        """Reset the environment and return its initial observation and info.
-
-        Parameters
-        ----------
-        seed : int or None, optional
-            Random seed passed to the Gymnasium base environment.
-        options : dict or None, optional
-            Reserved for additional reset options; currently unused.
-
-        Returns
-        -------
-        tuple
-            The initial lattice observation and an info dictionary containing
-            the initial polymer chain.
-        """
+    def reset(self, *, seed=None, options=None):
+        """Reset the environment and return ``(observation, info)``."""
         super().reset(seed=seed)
         self.state = OrderedDict({(0, 0) : self.seq[0]})
-        self.actions: List[int] = []
+        self.actions = []
         self.collisions = 0
         self.trapped = 0
         self.done = len(self.seq) == 1
@@ -260,20 +241,7 @@ class Lattice2DEnv(gym.Env):
         return self.grid.copy(), info
 
     def render(self, mode: str = 'human') -> Any:
-        """Render the lattice to standard output or an ANSI text stream.
-
-        Parameters
-        ----------
-        mode : str, optional
-            ``'human'`` writes to standard output and returns ``None``;
-            ``'ansi'`` writes to and returns a string buffer.
-
-        Returns
-        -------
-        IO[str] or None
-            The ANSI text buffer for ``'ansi'`` mode, otherwise ``None`` for
-            human rendering.
-        """
+        """Renders the environment"""
 
         outfile = StringIO() if mode == 'ansi' else sys.stdout
         # Flip so highest y-value row is printed first
@@ -316,20 +284,18 @@ class Lattice2DEnv(gym.Env):
         if mode != 'human':
             return outfile
 
-    def _get_adjacent_coords(
-            self, coords: Tuple[int, int]) -> Dict[int, Tuple[int, int]]:
-        """Return the four neighboring coordinates for a lattice position.
+    def _get_adjacent_coords(self, coords):
+        """Obtains all adjacent coordinates of the current position
 
         Parameters
         ----------
-        coords : tuple of int
-            ``(x, y)`` coordinate of the current position.
+        coords : 2-tuple
+            Coordinates (X-y) of the current position
 
         Returns
         -------
-        dict
-            Coordinates keyed by action number (0=left, 1=down, 2=up,
-            3=right).
+        dictionary
+            All adjacent coordinates
         """
         x, y = coords
         adjacent_coords = {
@@ -341,19 +307,18 @@ class Lattice2DEnv(gym.Env):
 
         return adjacent_coords
 
-    def _draw_grid(
-            self, chain: Mapping[Tuple[int, int], str]) -> NDArray[np.int_]:
-        """Draw and return the grid representation of a polymer chain.
+    def _draw_grid(self, chain):
+        """Constructs a grid with the current chain
 
         Parameters
         ----------
         chain : OrderedDict
-            Current chain, mapping coordinates to polymer symbols.
+            Current chain/state
 
         Returns
         -------
         numpy.ndarray
-            Vertically flipped grid of shape ``(grid_length, grid_length)``.
+            Grid of shape :code:`(n, n)` with the chain inside
         """
         self.grid.fill(0)
         for coord, poly in chain.items():
@@ -364,8 +329,8 @@ class Lattice2DEnv(gym.Env):
 
         return np.flipud(self.grid)
 
-    def _compute_reward(self, is_trapped: bool, collision: bool) -> int:
-        """Compute the integer reward for the current time step.
+    def _compute_reward(self, is_trapped, collision):
+        """Computes the reward for a given time step
 
         For every timestep, we compute the reward using the following function:
 
@@ -386,19 +351,20 @@ class Lattice2DEnv(gym.Env):
         completely traps itself and has no more moves available. Overall, we
         still compute for the :code:`state_reward` of the current chain but
         subtract that with the following equation:
-        ``floor(len(seq) * trap_penalty)``.
+        :code:`floor(length_of_sequence * trap_penalty)`
+        try:
 
         Parameters
         ----------
         is_trapped : bool
-            Whether the last action left the chain trapped.
+            Signal indicating if the agent is trapped.
         collision : bool
-            Whether the last action targeted an occupied coordinate.
+            Collision signal
 
         Returns
         -------
         int
-            State reward adjusted by collision and trap penalties.
+            Reward function
         """
         state_reward = self._compute_free_energy(self.state) if self.done else 0
         collision_penalty = self.collision_penalty if collision else 0
@@ -410,29 +376,29 @@ class Lattice2DEnv(gym.Env):
 
         return reward
 
-    def _compute_free_energy(
-            self, chain: Mapping[Tuple[int, int], str]) -> int:
-        """Compute the negative Gibbs energy score for a lattice state.
+    def _compute_free_energy(self, chain):
+        """Computes the Gibbs free energy given the lattice's state
 
-        This score is computed from non-consecutive adjacent hydrophobic pairs
-        using the energy function described by Dill and Lau (1989).
+        The free energy is only computed at the end of each episode. This
+        follow the same energy function given by Dill et. al.
+        [dill1989lattice]_
 
-        The returned value is the negated Gibbs energy, so larger values
-        correspond to more favorable configurations.
+        Recall that the goal is to find the configuration with the lowest
+        energy.
 
         .. [dill1989lattice] Lau, K.F., Dill, K.A.: A lattice statistical
-        mechanics model of the conformational and sequence spaces of proteins.
-        Macromolecules 22(10), 3986–3997 (1989)
+        mechanics model of the conformational and se quence spaces of proteins.
+        Marcromolecules 22(10), 3986–3997 (1989)
 
         Parameters
         ----------
         chain : OrderedDict
-            Current chain, mapping coordinates to polymer symbols.
+            Current chain in the lattice
 
         Returns
         -------
         int
-            Negative Gibbs energy score of the supplied chain.
+            Computed free energy
         """
         h_polymers = [x for x in chain if chain[x] == 'H']
         h_pairs = [(x, y) for x in h_polymers for y in h_polymers]
