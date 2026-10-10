@@ -64,7 +64,7 @@ class Lattice2DEnv(gym.Env):
     """
     metadata = {'render_modes': ['human', 'ansi']}
 
-    def __init__(self, seq, collision_penalty=-2, trap_penalty=0.5):
+    def __init__(self, seq: str, collision_penalty=-2, trap_penalty=0.5, end_ceneterd=True):
         """Initializes the lattice
 
         Parameters
@@ -78,6 +78,8 @@ class Lattice2DEnv(gym.Env):
             Penalty incurred when the agent is trapped. Actual value is
             computed as :code:`floor(length_of_sequence * trap_penalty)`
             Default is -2.
+        end_centered: bool
+            If the observation grid is ceneterd on the final residual
 
         Raises
         ------
@@ -124,6 +126,7 @@ class Lattice2DEnv(gym.Env):
         self.observation_space = spaces.Box(low=-2, high=1,
                                             shape=(self.grid_length, self.grid_length),
                                             dtype=np.int8)
+        self.end_cenetred = end_ceneterd
 
         # Initialize values
         self.reset()
@@ -307,7 +310,7 @@ class Lattice2DEnv(gym.Env):
 
         return adjacent_coords
 
-    def _draw_grid(self, chain):
+    def _draw_grid(self, chain: OrderedDict[tuple[int, int], str]):
         """Constructs a grid with the current chain
 
         Parameters
@@ -321,8 +324,12 @@ class Lattice2DEnv(gym.Env):
             Grid of shape :code:`(n, n)` with the chain inside
         """
         self.grid.fill(0)
+        last_residule = list(chain.keys())[-1]
         for coord, poly in chain.items():
-            trans_x, trans_y = tuple(sum(x) for x in zip(self.midpoint, coord))
+            if self.end_cenetred:
+                trans_x, trans_y = tuple(sum(x) for x in zip(self.midpoint, coord, (-last_residule[0], -last_residule[1])))
+            else:
+                trans_x, trans_y = tuple(sum(x) for x in zip(self.midpoint, coord))
             # Recall that a numpy array works by indexing the rows first
             # before the columns, that's why we interchange.
             self.grid[(trans_y, trans_x)] = POLY_TO_INT[poly]
